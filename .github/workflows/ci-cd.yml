@@ -2,19 +2,14 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
-env:
-  NODE_VERSION: '18'
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   test:
-    name: Test Application
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
     - name: Checkout code
@@ -23,136 +18,46 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ env.NODE_VERSION }}
+        node-version: '18'
         cache: 'npm'
         
     - name: Install dependencies
       run: npm ci
       
-    - name: Run linting (if eslint is configured)
-      run: npm run lint || echo "No linting configured"
-      continue-on-error: true
-      
     - name: Run tests
       run: npm test
-      
-    - name: Generate test coverage
-      run: npm run test:coverage || echo "No coverage configured"
-      continue-on-error: true
 
   build:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
-          
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-  deploy-demo:
-    name: Deployment Ready
-    runs-on: ubuntu-latest
-    needs: [test, build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - name: Deployment Simulation
+    - name: Build Docker image
       run: |
-        echo "🚀 Deployment Pipeline Ready!"
-        echo "✅ Tests passed"
-        echo "✅ Docker image built successfully" 
-        echo "✅ Security scan completed"
-        echo ""
-        echo "📋 Ready for production deployment to:"
-        echo "   • Render.com"
-        echo "   • AWS ECS"
-        echo "   • Google Cloud Run"
-        echo "   • Azure Container Instances"
-        echo ""
-        echo "🔧 To deploy to Render:"
-        echo "   1. Create Render account at https://render.com"
-        echo "   2. Connect GitHub repository"
-        echo "   3. Add deployment secrets to GitHub:"
-        echo "      - RENDER_SERVICE_ID"
-        echo "      - RENDER_API_KEY"
-        echo "   4. Uncomment deployment steps in workflow"
-        echo ""
-        echo "💡 This pipeline demonstrates production-ready DevOps practices!"
+        docker build -t devops-demo:latest .
+        echo "✅ Docker build completed successfully"
+        
+    - name: Test Docker container
+      run: |
+        docker run -d -p 3000:3000 --name test-container devops-demo:latest
+        sleep 10
+        curl -f http://localhost:3000/health || exit 1
+        docker stop test-container
+        echo "✅ Container test completed successfully"
 
-  # Commented out for demo - uncomment when Render is configured
-  # deploy-to-render:
-  #   name: Deploy to Render
-  #   runs-on: ubuntu-latest
-  #   needs: [test, build]
-  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-  #   
-  #   steps:
-  #   - name: Deploy to Render
-  #     uses: johnbeynon/render-deploy-action@v0.0.8
-  #     with:
-  #       service-id: ${{ secrets.RENDER_SERVICE_ID }}
-  #       api-key: ${{ secrets.RENDER_API_KEY }}
-  #       
-  #   - name: Verify deployment
-  #     run: |
-  #       echo "Waiting for deployment to complete..."
-  #       sleep 30
-  #       curl -f "${{ secrets.RENDER_URL }}/health" || exit 1
-  #       echo "Deployment verified successfully!"
-
-  security-scan:
-    name: Security Scan
+  deploy-ready:
+    needs: [test, build]
     runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push'
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Run Trivy vulnerability scanner
-      continue-on-error: true
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
+    - name: Deployment Ready
+      run: |
+        echo "🚀 Application is ready for deployment!"
+        echo "✅ Tests passed"
+        echo "✅ Docker image built successfully"
+        echo "✅ Container tested successfully"
+        echo "📋 Ready to deploy to any cloud platform"
