@@ -4,7 +4,7 @@ FROM node:18-alpine
 # Set the working directory in the container
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json (if available)
+# Copy package.json and package-lock.json first (for better caching)
 COPY package*.json ./
 
 # Install dependencies
@@ -14,8 +14,9 @@ RUN npm ci --only=production && npm cache clean --force
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodeuser -u 1001
 
-# Copy the rest of the application code
-COPY . .
+# Copy only the necessary application files
+COPY app.js ./
+COPY app.test.js ./
 
 # Change ownership of the app directory to the nodeuser
 RUN chown -R nodeuser:nodejs /usr/src/app
